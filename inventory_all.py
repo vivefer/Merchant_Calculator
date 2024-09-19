@@ -17,12 +17,6 @@ if 'data' not in st.session_state:
 if 'selling_active' not in st.session_state:
     st.session_state['selling_active'] = False
 
-# Initialize session state for customers (for credit tracking)
-if 'customers' not in st.session_state:
-    st.session_state['customers'] = []
-if 'credit_entry_active' not in st.session_state:
-    st.session_state['credit_entry_active'] = True
-
 # File paths for storing data
 product_file = 'products.csv'
 stats_file = 'stats.csv'
@@ -60,7 +54,6 @@ else:
     last_update = datetime.now()
     next_update = datetime.now()
 
-# Product Input Page
 def input_page():
     st.title("Product Sales and Profit Tracker - Product Input")
     st.write(f"Last Update: {last_update.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -89,24 +82,22 @@ def input_page():
         submitted = st.form_submit_button("Submit Products")
         
         if submitted:
-            # Avoid overwriting previous product details on every submission
-            st.session_state['products'].extend(products)
-            st.session_state['cost_price'].extend(cost_price)
-            st.session_state['selling_price'].extend(selling_price)
-
+            # Store products in session state and save to file
+            st.session_state['products'] = products
+            st.session_state['cost_price'] = cost_price
+            st.session_state['selling_price'] = selling_price
             product_df = pd.DataFrame({
-                'Product': st.session_state['products'],
-                'Cost_Price': st.session_state['cost_price'],
-                'Selling_Price': st.session_state['selling_price']
+                'Product': products,
+                'Cost_Price': cost_price,
+                'Selling_Price': selling_price
             })
             save_csv(product_df, product_file)
             
             # Initialize times sold for each product
-            st.session_state['times_sold'] = [0] * len(st.session_state['products'])
+            st.session_state['times_sold'] = [0] * num_products
             st.session_state['selling_active'] = True
             st.write("Product details submitted and saved!")
 
-# Sales Page
 def sales_page():
     st.title("Product Sales and Profit Tracker - Sales Tracking")
 
@@ -140,9 +131,6 @@ def sales_page():
                 'Profit_per_product': profit_per_product,
                 'Times_Sold': st.session_state['times_sold'],
             })
-
-            # Avoid duplicate entries
-            data.drop_duplicates(subset=['Product'], inplace=True)
 
             # Calculate selling rate for each product (based on times sold)
             data['Selling_rate'] = data['Times_Sold']
@@ -185,64 +173,29 @@ def sales_page():
         st.subheader("All Products with their Profit x Selling Rate and Strategy")
         st.dataframe(st.session_state['data'][['Product', 'Cost_Price', 'Selling_Price', 'Profit_per_product', 'Times_Sold', 'Profit_x_Selling_rate', 'Strategy']])
 
-# Customer Credit Tracking Page
-def customer_credit_page():
-    st.title("Customer Credit Tracking")
+    # Custom Time Intervals
+    st.sidebar.header("Set Custom Time Interval")
+    interval_type = st.sidebar.selectbox("Select Interval Type", ['Week', 'Month', '6 Months', 'Year', 'Custom'])
+    if interval_type == 'Custom':
+        custom_days = st.sidebar.number_input("Enter the number of days for the custom interval:", min_value=1)
+        if st.sidebar.button("Set Custom Interval"):
+            update_time_log(custom_interval=custom_days)
+            st.sidebar.write(f"Next Update in {custom_days} days.")
+    else:
+        intervals = {'Week': 7, 'Month': 30, '6 Months': 180, 'Year': 365}
+        if st.sidebar.button(f"Set {interval_type} Interval"):
+            update_time_log(custom_interval=intervals[interval_type])
+            st.sidebar.write(f"Next Update in {intervals[interval_type]} days.")
 
-    if st.session_state['credit_entry_active']:
-        st.header("Enter Customer Credit Details")
-        
-        with st.form("Customer Entry Form"):
-            customer_name = st.text_input("Enter customer's name:")
-            amount_borrowed = st.number_input("Enter the amount borrowed:", min_value=0.0, step=0.01)
-            repay_time = st.number_input("Enter the time taken to repay (in days):", min_value=1.0, step=1.0)
-            
-            # Submit button for entering customer details
-            submitted = st.form_submit_button("Submit Customer Details")
-            
-            if submitted:
-                credit_score = amount_borrowed / repay_time  # Credit score based on Amount/Time logic
-                st.session_state['customers'].append({
-                    'Customer': customer_name,
-                    'Amount_Borrowed': amount_borrowed,
-                    'Repay_Time': repay_time,
-                    'Credit_Score': credit_score
-                })
-                st.write(f"Customer {customer_name}'s credit details added!")
+# Main function to control page navigation
+def main():
+    st.sidebar.title("Navigation")
+    page = st.sidebar.radio("Select a Page", ["Product Input", "Sales Tracking"])
     
-    # Button to stop customer entry and calculate credit scores
-    if st.button("End Customer Entry and Calculate Credit Scores"):
-        st.session_state['credit_entry_active'] = False
+    if page == "Product Input":
+        input_page()
+    elif page == "Sales Tracking":
+        sales_page()
 
-        if len(st.session_state['customers']) > 0:
-            credit_data = pd.DataFrame(st.session_state['customers'])
-            
-            # Display customer credit data
-            st.write("Customer Credit Details with Credit Scores:")
-            st.dataframe(credit_data)
-
-            # Plot Amount vs Repay Time and label Credit Score
-            plt.figure(figsize=(10, 6))
-            for i, row in credit_data.iterrows():
-                plt.scatter(row['Repay_Time'], row['Amount_Borrowed'], label=f"{row['Customer']} (Score: {row['Credit_Score']:.2f})")
-                plt.text(row['Repay_Time'] + 0.1, row['Amount_Borrowed'], row['Customer'], fontsize=8)
-
-            plt.xlabel("Time to Repay (Days)")
-            plt.ylabel("Amount Borrowed")
-            plt.title("Customer Credit Analysis")
-            plt.grid(True)
-            st.pyplot(plt)
-        else:
-            st.write("No customers added yet!")
-
-# Sidebar navigation
-st.sidebar.title("Navigation")
-page = st.sidebar.radio("Select a page:", ["Input Products", "Sell Products", "Customer Credit"])
-
-# Navigate to selected page
-if page == "Input Products":
-    input_page()
-elif page == "Sell Products":
-    sales_page()
-elif page == "Customer Credit":
-    customer_credit_page()
+if __name__ == "__main__":
+    main()
